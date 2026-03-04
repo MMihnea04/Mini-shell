@@ -24,7 +24,7 @@ static bool shell_cd(word_t *dir)
 	/* TODO: Execute cd. */
 	char *dir_path;
 
-	// daca nu avem dir,mergem la HOME
+	// if we don't have dir, go to HOME
 	if (dir == NULL) {
 		dir_path = getenv("HOME");
 		if (dir_path == NULL)
@@ -32,11 +32,11 @@ static bool shell_cd(word_t *dir)
 		return chdir(dir_path) != 0 ? 1 : 0;
 	}
 
-	// obt calea dir din word si verif daca e valida
+	// obtain dir path from word and verify if it's valid
 	dir_path = get_word(dir);
 	if (dir_path == NULL)
 		return 1;
-	// inc sa schimbam dir si verif rez
+	// attempt to change dir and verify result
 	int rez = chdir(dir_path);
 
 	free(dir_path);
@@ -59,12 +59,12 @@ static int shell_exit(void)
  */
 static int shell_pwd(void)
 {
-	// buff pt dir crt si obt calea dir de lucru
+	// buffer for current dir and obtain working dir path
 	char crt_dir[1024];
 
 	if (getcwd(crt_dir, sizeof(crt_dir)) == NULL)
 		return 1;
-	// afisam dir crt
+	// display current dir
 	printf("%s\n", crt_dir);
 	return 0;
 }
@@ -76,19 +76,19 @@ static int do_redirect(word_t *file, int io_flag, int append_bit, int target_fd)
 {
 	if (file == NULL)
 		return -1;
-	// obt numele fis si set flag-uri pt open
+	// obtain file name and set flags for open
 	char *filename = get_word(file);
 	int flags = O_WRONLY | O_CREAT | ((io_flag & append_bit) ? O_APPEND : O_TRUNC);
-	// deschiem fis si verif daca a mers
+	// open file and verify if it worked
 	int file_descr = open(filename, flags, 0644);
 
 	free(filename);
 	if (file_descr < 0)
 		return -1;
-	// salvam fd orig pt restaurare mai tarziu
+	// save original fd for restoration later
 	int saved_fd = dup(target_fd);
 
-	// redirec fd target spre fis si inchidem fis descr
+	// redirect target fd to file and close file descriptor
 	dup2(file_descr, target_fd);
 	close(file_descr);
 	return saved_fd;
@@ -109,19 +109,19 @@ static int parse_simple(simple_command_t *simple_cmd, int depth, command_t *pare
 		return 0;
 
 	/* TODO: If builtin command, execute the command. */
-	// verif daca e cmd cd si facem redirec daca treb
+	// verify if it's cd cmd and do redirect if needed
 	if (strcmp(cmd_name, "cd") == 0) {
 		int org_stdout = do_redirect(simple_cmd->out, simple_cmd->io_flags, IO_OUT_APPEND, STDOUT_FILENO);
 		int saved_err = do_redirect(simple_cmd->err, simple_cmd->io_flags, IO_ERR_APPEND, STDERR_FILENO);
-		// exec cd si salvam rez
+		// execute cd and save result
 		int rez = shell_cd(simple_cmd->params);
 
-		// restauram stdout daca a fost redirec
+		// restore stdout if it was redirected
 		if (org_stdout >= 0) {
 			dup2(org_stdout, STDOUT_FILENO);
 			close(org_stdout);
 		}
-		// restauram stderr daca a fost redirec
+		// restore stderr if it was redirected
 		if (saved_err >= 0) {
 			dup2(saved_err, STDERR_FILENO);
 			close(saved_err);
@@ -130,13 +130,13 @@ static int parse_simple(simple_command_t *simple_cmd, int depth, command_t *pare
 		return rez;
 	}
 
-	// verif daca e cmd pwd
+	// verify if it's pwd cmd
 	if (strcmp(cmd_name, "pwd") == 0) {
-		// redirec stdout daca treb si exec pwd
+		// redirect stdout if needed and execute pwd
 		int saved = do_redirect(simple_cmd->out, simple_cmd->io_flags, IO_OUT_APPEND, STDOUT_FILENO);
 		int rez = shell_pwd();
 
-		// restauram stdout daca a fost redirec
+		// restore stdout if it was redirected
 		if (saved >= 0) {
 			dup2(saved, STDOUT_FILENO);
 			close(saved);
@@ -145,7 +145,7 @@ static int parse_simple(simple_command_t *simple_cmd, int depth, command_t *pare
 		return rez;
 	}
 
-	// verif daca e exit sau quit si returnam cod special
+	// verify if it's exit or quit and return special code
 	if (strcmp(cmd_name, "exit") == 0 || strcmp(cmd_name, "quit") == 0) {
 		free(cmd_name);
 		return shell_exit();
@@ -154,26 +154,26 @@ static int parse_simple(simple_command_t *simple_cmd, int depth, command_t *pare
 	/* TODO: If variable assignment, execute the assignment and return
 	 * the exit status.
 	 */
-	// verif daca e asig de var(cont =)
+	// verify if it's var assignment (contains =)
 	if (strchr(cmd_name, '=') != NULL) {
-		// sep numele var de valoare la =
+		// separate var name from value at =
 		*strchr(cmd_name, '=') = '\0';
 		char *var_value = strchr(cmd_name, '\0') + 1;
 
-		// daca avem params,val var vine din params
+		// if we have params, var value comes from params
 		if (simple_cmd->params != NULL) {
 			char *args_value = get_word(simple_cmd->params);
 
 			if (args_value != NULL) {
-				// set var env cu val din params
+				// set env var with value from params
 				setenv(cmd_name, args_value, 1);
 				free(args_value);
 			} else {
-				// folosim val dupa =
+				// use value after =
 				setenv(cmd_name, var_value, 1);
 			}
 		} else {
-			// nu avem params,folosim val dupa =
+			// we don't have params, use value after =
 			setenv(cmd_name, var_value, 1);
 		}
 		free(cmd_name);
@@ -187,22 +187,22 @@ static int parse_simple(simple_command_t *simple_cmd, int depth, command_t *pare
 	 *   2. Wait for child
 	 *   3. Return exit status
 	 */
-	// creem proc copil pt exec cmd extern
+	// create child process to execute external cmd
 	pid_t process_id = fork();
 
 	if (process_id < 0) {
 		free(cmd_name);
 		return 1;
 	}
-	// codul din proc copil
+	// code in child process
 	if (process_id == 0) {
 		int file_descr;
 
-		// redirec stdin daca treb
+		// redirect stdin if needed
 		if (simple_cmd->in != NULL) {
 			char *inp_file = get_word(simple_cmd->in);
 
-			// deschidem fis pt citire si redirec stdin
+			// open file for reading and redirect stdin
 			file_descr = open(inp_file, O_RDONLY);
 			free(inp_file);
 			if (file_descr < 0)
@@ -210,20 +210,20 @@ static int parse_simple(simple_command_t *simple_cmd, int depth, command_t *pare
 			dup2(file_descr, STDIN_FILENO);
 			close(file_descr);
 		}
-		// redirec stdout daca treb
+		// redirect stdout if needed
 		if (simple_cmd->out != NULL) {
 			char *outp_file = get_word(simple_cmd->out);
-			// set flag-uri pt append sau trunc
+			// set flags for append or trunc
 			int flags = O_WRONLY | O_CREAT | ((simple_cmd->io_flags & IO_OUT_APPEND) ? O_APPEND : O_TRUNC);
 
-			// deschidem fis si redirec stdout
+			// open file and redirect stdout
 			file_descr = open(outp_file, flags, 0644);
 			if (file_descr < 0) {
 				free(outp_file);
 				exit(EXIT_FAILURE);
 			}
 			dup2(file_descr, STDOUT_FILENO);
-			// verif daca stderr merge la acelasi fis
+			// verify if stderr goes to same file
 			if (simple_cmd->err != NULL) {
 				char *err_file = get_word(simple_cmd->err);
 
@@ -234,13 +234,13 @@ static int parse_simple(simple_command_t *simple_cmd, int depth, command_t *pare
 			close(file_descr);
 			free(outp_file);
 		}
-		// redirec stderr daca treb si nu e deja redirec la acelasi fis ca stdout
+		// redirect stderr if needed and not already redirected to same file as stdout
 		if (simple_cmd->err != NULL && (simple_cmd->out == NULL ||
 				strcmp(get_word(simple_cmd->out), get_word(simple_cmd->err)) != 0)) {
 			char *err_file = get_word(simple_cmd->err);
 			int flags = O_WRONLY | O_CREAT | ((simple_cmd->io_flags & IO_ERR_APPEND) ? O_APPEND : O_TRUNC);
 
-			// deschidem fis si redirec stderr
+			// open file and redirect stderr
 			file_descr = open(err_file, flags, 0644);
 			free(err_file);
 			if (file_descr < 0)
@@ -248,19 +248,19 @@ static int parse_simple(simple_command_t *simple_cmd, int depth, command_t *pare
 			dup2(file_descr, STDERR_FILENO);
 			close(file_descr);
 		}
-		// obt argv si exec cmd
+		// obtain argv and execute cmd
 		int argc;
 		char **argv = get_argv(simple_cmd, &argc);
 
 		execvp(cmd_name, argv);
-		// daca exec esueaza,afisam err si exit
+		// if exec fails, display error and exit
 		fprintf(stderr, "Execution failed for '%s'\n", cmd_name);
 		for (int i = 0; i < argc; i++)
 			free(argv[i]);
 		free(argv);
 		exit(EXIT_FAILURE);
 	}
-	// proc parinte ast proc copil si ret sts exit
+	// parent process waits for child process and returns exit status
 	int sts;
 
 	waitpid(process_id, &sts, 0);
@@ -275,29 +275,26 @@ static bool run_in_parallel(command_t *cmd1, command_t *cmd2, int depth,
 		command_t *parent_cmd)
 {
 	/* TODO: Execute cmd1 and cmd2 simultaneously. */
-	// creem proc pt primul cmd
-	pid_t pid1 = fork();
-
-	if (pid1 < 0)
+	// create process for first cmd
 		return 1;
-	// copilul exec cmd1
+	// child executes cmd1
 	if (pid1 == 0)
 		exit(parse_command(cmd1, depth + 1, parent_cmd));
 
-	// creem proc pt al 2-lea cmd
+	// create process for second cmd
 	pid_t pid2 = fork();
 	int sts;
 
 	if (pid2 < 0) {
-		// daca fork esueaza,ast primul proc
+		// if fork fails, wait for first process
 		waitpid(pid1, &sts, 0);
 		return 1;
 	}
-	// copilul exec cmd2
+	// child executes cmd2
 	if (pid2 == 0)
 		exit(parse_command(cmd2, depth + 1, parent_cmd));
 
-	// parintele ast ambele proc si ret sts ultimului
+	// parent waits for both processes and returns status of last
 	waitpid(pid1, &sts, 0);
 	waitpid(pid2, &sts, 0);
 	return WIFEXITED(sts) ? WEXITSTATUS(sts) : 1;
@@ -310,13 +307,10 @@ static bool run_on_pipe(command_t *cmd1, command_t *cmd2, int depth,
 		command_t *parent_cmd)
 {
 	/* TODO: Redirect the output of cmd1 to the input of cmd2. */
-	// cream pipe pt comun intre proc
-	int pipe_descr[2];
-
-	if (pipe(pipe_descr) < 0)
+	// create pipe for communication between processes
 		return 1;
 
-	// creem proc pt cmd1(scrie in pipe)
+	// create process for cmd1 (writes to pipe)
 	pid_t pid1 = fork();
 
 	if (pid1 < 0) {
@@ -325,13 +319,13 @@ static bool run_on_pipe(command_t *cmd1, command_t *cmd2, int depth,
 		return 1;
 	}
 	if (pid1 == 0) {
-		// inchidem cap de citire si redirec stdout la cap de scriere
+		// close read end and redirect stdout to write end
 		close(pipe_descr[READ]);
 		dup2(pipe_descr[WRITE], STDOUT_FILENO);
 		close(pipe_descr[WRITE]);
 		exit(parse_command(cmd1, depth + 1, parent_cmd));
 	}
-	// creem proc pt cmd2(citeste din pipe)
+	// create process for cmd2 (reads from pipe)
 	pid_t pid2 = fork();
 	int sts;
 
@@ -342,13 +336,13 @@ static bool run_on_pipe(command_t *cmd1, command_t *cmd2, int depth,
 		return 1;
 	}
 	if (pid2 == 0) {
-		// inchidem cap de scriere si reirec stdin la cap de citire
+		// close write end and redirect stdin to read end
 		close(pipe_descr[WRITE]);
 		dup2(pipe_descr[READ], STDIN_FILENO);
 		close(pipe_descr[READ]);
 		exit(parse_command(cmd2, depth + 1, parent_cmd));
 	}
-	// parintele inchide ambele cap si ast proc copii
+	// parent closes both ends and waits for child processes
 	close(pipe_descr[READ]);
 	close(pipe_descr[WRITE]);
 	waitpid(pid1, &sts, 0);
@@ -362,32 +356,32 @@ static bool run_on_pipe(command_t *cmd1, command_t *cmd2, int depth,
 int parse_command(command_t *crt_cmd, int depth, command_t *parent_cmd)
 {
 	/* TODO: sanity checks */
-	// verif daca cmd e valid
+	// verify if cmd is valid
 	if (crt_cmd == NULL)
 		return 0;
-	// daca nu are op,e cmd simplu
+	// if it has no op, it's a simple cmd
 	if (crt_cmd->op == OP_NONE)
 		/* TODO: Execute a simple command. */
 		return parse_simple(crt_cmd->scmd, depth, parent_cmd);
 
 	int rez1;
 
-	// proc op in functie de tip
+	// process op based on type
 	switch (crt_cmd->op) {
 	case OP_SEQUENTIAL:
 		/* TODO: Execute the commands one after the other. */
-		// exec cmd-uri unul dupa altul
+		// execute commands one after another
 		rez1 = parse_command(crt_cmd->cmd1, depth + 1, crt_cmd);
 		return (rez1 == SHELL_EXIT) ? SHELL_EXIT : parse_command(crt_cmd->cmd2, depth + 1, crt_cmd);
 	case OP_PARALLEL:
 		/* TODO: Execute the commands simultaneously. */
-		// exec cmd-uri in paralel
+		// execute commands in parallel
 		return run_in_parallel(crt_cmd->cmd1, crt_cmd->cmd2, depth, crt_cmd);
 	case OP_CONDITIONAL_NZERO:
 		/* TODO: Execute the second command only if the first one
 		 * returns non zero.
 		 */
-		// exec cmd2 doar daca cmd1 eseaza
+		// execute cmd2 only if cmd1 fails
 		rez1 = parse_command(crt_cmd->cmd1, depth + 1, crt_cmd);
 		if (rez1 == SHELL_EXIT)
 			return SHELL_EXIT;
@@ -396,7 +390,7 @@ int parse_command(command_t *crt_cmd, int depth, command_t *parent_cmd)
 		/* TODO: Execute the second command only if the first one
 		 * returns zero.
 		 */
-		// exec cmd2 doar daca cmd1 reuseste
+		// execute cmd2 only if cmd1 succeeds
 		rez1 = parse_command(crt_cmd->cmd1, depth + 1, crt_cmd);
 		if (rez1 == SHELL_EXIT)
 			return SHELL_EXIT;
@@ -405,7 +399,7 @@ int parse_command(command_t *crt_cmd, int depth, command_t *parent_cmd)
 		/* TODO: Redirect the output of the first command to the
 		 * input of the second.
 		 */
-		// conectam output cmd1 la input cmd2
+		// connect output of cmd1 to input of cmd2
 		return run_on_pipe(crt_cmd->cmd1, crt_cmd->cmd2, depth, crt_cmd);
 	default:
 		return SHELL_EXIT;
