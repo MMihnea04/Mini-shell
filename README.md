@@ -1,321 +1,118 @@
-# Minishell
+Mini-Shell
 
-## Objectives
+This project implements a simplified Unix shell in C. It is designed as an educational exercise focused on understanding process creation, inter-process communication, and implementing a command-line interface. The shell executes built-in commands, external programs, and supports piping and redirection.
 
-- Learn how shells create new child processes and connect the I/O to the terminal.
-- Gain a better understanding of the `fork()` function wrapper.
-- Learn to correctly execute commands written by the user and treat errors.
+The emphasis of the project is correctness, simplicity, and faithful behavior according to POSIX shell semantics rather than performance optimization.
 
-## Statement
+Overview
 
-### Introduction
+A shell provides a command-line interface for interacting with the operating system. Users can enter commands, execute programs, and manage processes.
 
-A shell is a command-line interpreter that provides a text-based user interface for operating systems.
-Bash is both an interactive command language and a scripting language.
-It is used to interact with the file system, applications, operating system and more.
+In this project, the mini-shell reads user input, parses it into commands and arguments, and executes them in child processes. The shell supports multiple commands separated by pipes, input/output redirection, background execution, and signal handling.
 
-For this assignment you will build a Bash-like shell with minimal functionalities like traversing the file system, running applications, redirecting their output or piping the output from one application into the input of another.
-The details of the functionalities that must be implemented will be further explained.
+The shell also implements basic built-in commands such as cd, exit, and pwd.
 
-### Shell Functionalities
+Architecture
 
-#### Changing the Current Directory
+The shell follows a read-eval-execute loop:
 
-The shell will support a built-in command for navigating the file system, called `cd`.
-To implement this feature you will need to store the current directory path because the user can provide either relative or absolute paths as arguments to the `cd` command.
+Read: The shell reads a line of input from the user or a script file
 
-The built-in `pwd` command will show the current directory path.
+Parse: The input is parsed into commands, arguments, and control operators (pipes, redirection, background)
 
-Check the following examples below to understand these functionalities.
+Execute: Built-in commands are executed in the shell process. External commands are executed in child processes using fork and exec.
 
-```sh
-> pwd
-/home/student
-> cd operating-systems/assignments/minishell
-> pwd
-/home/student/operating-systems/assignments/minishell
-> cd inexitent
-no such file or directory
-> cd /usr/lib
-> pwd
-/usr/lib
-```
+Wait: The shell waits for foreground processes to finish, while background processes run asynchronously
 
-> **_NOTE:_** Using the `cd` command without any arguments or with more than one argument doesn't affect the current directory path.
-> Make sure this edge case is handled in a way that prevents crashes.
+Signal handling ensures that Ctrl-C interrupts foreground commands but does not terminate the shell itself.
 
-#### Closing the Shell
+Command Parsing
 
-Inputting either `quit` or `exit` should close the minishell.
+The shell parses user input into a structured format:
 
-#### Running an Application
+Splits commands by spaces while respecting quoted strings
 
-Suppose you have an executable named `sum` in the current directory.
-It takes arbitrarily many numbers as arguments and prints their sum to `stdout`.
-The following example shows how the minishell implemented by you should behave.
+Identifies pipes (|) and sets up inter-process communication using pipes
 
-```sh
-> ./sum 2 4 1
-7
-```
+Detects input (<) and output (>, >>) redirection
 
-If the executable is located at the `/home/student/sum` absolute path, the following example should also be valid.
+Handles background execution with the & operator
 
-```sh
-> /home/student/sum 2 4 1
-7
-```
+The parser produces a command table representing the sequence of commands, arguments, redirections, and execution mode.
 
-Each application will run in a separate child process of the minishell created using [fork](https://man7.org/linux/man-pages/man2/fork.2.html).
+Execution
 
-#### Environment Variables
+Built-in Commands: cd, pwd, exit are executed directly in the shell process
 
-Your shell will support using environment variables.
-The environment variables will be initially inherited from the `bash` process that started your minishell application.
+External Commands: Spawned using fork() and executed with execvp()
 
-If an undefined variable is used, its value is the empty string: `""`.
+Pipes: The shell creates pipes between processes to allow output of one command to become input of the next
 
-> **_NOTE:_** The following examples contain comments which don't need to be supported by the minishell.
-> They are present here only to give a better understanding of the minishell's functionalities.
+Redirection: Standard input/output can be redirected to files
 
-```sh
-> NAME="John Doe"                    # Will assign the value "John Doe" to the NAME variable
-> AGE=27                             # Will assign the value 27 to the AGE variable
-> ./identify $NAME $LOCATION $AGE    # Will translate to ./identify "John Doe" "" 27 because $LOCATION is not defined
-```
+Background Execution: Commands followed by & are executed without blocking the shell
 
-A variable can be assigned to another variable.
+The shell ensures proper cleanup of file descriptors and child processes to avoid resource leaks.
 
-```sh
-> OLD_NAME=$NAME    # Will assign the value of the NAME variable to OLD_NAME
-```
+Signal Handling
 
-#### Operators
+The shell implements signal handling to support:
 
-##### Sequential Operator
+SIGINT (Ctrl-C) to terminate foreground processes without exiting the shell
 
-By using the `;` operator, you can chain multiple commands that will run sequentially, one after another.
-In the command `expr1; expr2` it is guaranteed that `expr1` will finish before `expr2` is be evaluated.
+SIGCHLD to reap background child processes and prevent zombie processes
 
-```sh
-> echo "Hello"; echo "world!"; echo "Bye!"
-Hello
-world!
-Bye!
-```
+Signals are handled in a way that does not disrupt the main read-eval-execute loop.
 
-##### Parallel Operator
+Features
 
-By using the `&` operator you can chain multiple commands that will run in parallel.
-When running the command `expr1 & expr2`, both expressions are evaluated at the same time (by different processes).
-The order in which the two commands finish is not guaranteed.
+Execution of built-in and external commands
 
-```sh
-> echo "Hello" & echo "world!" & echo "Bye!"  # The words may be printed in any order
-world!
-Bye!
-Hello
-```
+Command piping (|)
 
-##### Pipe Operator
+Input and output redirection (<, >, >>)
 
-With the `|` operator you can chain multiple commands so that the standard output of the first command is redirected to the standard input of the second command.
+Background execution with &
 
-Hint: Look into [anonymous pipes](https://man7.org/linux/man-pages/man2/pipe.2.html) and file descriptor inheritance while using [fork](https://man7.org/linux/man-pages/man2/fork.2.html).
+Signal handling for Ctrl-C and child process termination
 
-```sh
-> echo "Bye"                      # command outputs "Bye"
-Bye
-> ./reverse_input
-Hello                             # command reads input "Hello"
-olleH                             # outputs the reversed string "olleH"
-> echo "world" | ./reverse_input  # the output generated by the echo command will be used as input for the reverse_input executable
-dlrow
-```
+Command prompt and error handling
 
-##### Chain Operators for Conditional Execution
+Building and Running
 
-The `&&` operator allows chaining commands that are executed sequentially, from left to right.
-The chain of execution stops at the first command **that exits with an error (return code not 0)**.
+The shell can be built using make from the src directory:
 
-```sh
-# throw_error always exits with a return code different than 0 and outputs to stderr "ERROR: I always fail"
-> echo "H" && echo "e" && echo "l" && ./throw_error && echo "l" && echo "o"
-H
-e
-l
-ERROR: I always fail
-```
+cd src
+make
 
-The `||` operator allows chaining commands that are executed sequentially, from left to right.
-The chain of execution stops at the first command **that exits successfully (return code is 0)**.
+This produces the mini-shell binary.
 
-```sh
-# throw_error always exits with a return code different than 0 and outputs to stderr "ERROR: I always fail"
-> ./throw_error || ./throw_error || echo "Hello" || echo "world!" || echo "Bye!"
-ERROR: I always fail
-ERROR: I always fail
-Hello
-```
+Run the shell with:
 
-##### Operator Priority
+./mini-shell
 
-The priority of the available operators is the following.
-The lower the number, the **higher** the priority:
+The shell will display a prompt and accept user commands. To exit, use the exit command or press Ctrl-D.
 
-1. Pipe operator (`|`)
-1. Conditional execution operators (`&&` or `||`)
-1. Parallel operator (`&`)
-1. Sequential operator (`;`)
+Testing and Validation
 
-#### I/O Redirection
+Automated and manual tests are used to validate:
 
-The shell must support the following redirection options:
+Built-in commands behavior (cd, pwd, exit)
 
-- `< filename` - redirects `filename` to standard input
-- `> filename` - redirects standard output to `filename`
-- `2> filename` - redirects standard error to `filename`
-- `&> filename` - redirects standard output and standard error to `filename`
-- `>> filename` - redirects standard output to `filename` in append mode
-- `2>> filename` - redirects standard error to `filename` in append mode
+Execution of external programs
 
-Hint: Look into [open](https://man7.org/linux/man-pages/man2/open.2.html), [dup2](https://man7.org/linux/man-pages/man2/dup.2.html) and [close](https://man7.org/linux/man-pages/man2/close.2.html).
+Piping and redirection functionality
 
-## Support Code
+Background execution
 
-The support code consists of three directories:
+Signal handling and process cleanup
 
-- `src/` is the skeleton mini-shell implementation.
-  You will have to implement missing parts marked as `TODO` items.
+Test scripts compare the output of the mini-shell against a reference shell to ensure correctness.
 
-- `util/` stores a parser to be used as support code for implementing the assignment.
-  For more information, you can check the `util/parser/README.md` file.
-  You can use this parser or write your own.
+Limitations
 
-- `tests/` are tests used to validate (and grade) the assignment.
+The shell does not implement job control commands like fg or bg
 
-### Building mini-shell
+Advanced shell features such as variable expansion, command substitution, or scripting are not supported
 
-To build mini-shell, run `make` in the `src/` directory:
-
-```console
-student@so:~/.../assignment-mini-shell$ cd src/
-
-student@so:~/.../assignment-mini-shell/src$ make
-```
-
-## Testing and Grading
-
-The testing is automated.
-Tests are located in the `tests/` directory.
-
-```console
-student@so:~/.../assignment-mini-shell/tests$ ls -F
-Makefile  grade.sh*  run_all.sh*  _test/
-```
-
-To test and grade your assignment solution, enter the `tests/` directory and run `grade.sh`.
-Note that this requires linters being available.
-The easiest is to use a Docker-based setup with everything installed, as shown in the section ["Running the Linters"](#running-the-linters).
-When using `grade.sh` you will get grades for correctness (maximum `90` points) and for coding style (maximum `10` points).
-A successful run will provide you an output ending with:
-
-```console
-### GRADE
-
-
-Checker:                                                         90/ 90
-Style:                                                           10/ 10
-Total:                                                          100/100
-
-
-### STYLE SUMMARY
-
-
-```
-
-### Running the Checker
-
-To run the checker and everything else required, use the `make check` command in the `tests/` directory:
-
-```console
-student@so:~/.../assignment-mini-shell/tests$ make check
-make[1]: Entering directory '...'
-rm -f *~
-[...]
-16) Testing sleep command...................................failed  [ 0/100]
-17) Testing fscanf function.................................failed  [ 0/100]
-18) Testing unknown command.................................failed  [ 0/100]
-
-                                                            Total:    0/100
-```
-
-For starters, tests will fail.
-
-Each test is worth a number of points.
-The total number of points is `90`.
-The maximum grade is obtained by dividing the number of points to `10`, for a maximum grade of `9.00`.
-
-A successful test run will show the output:
-
-```console
-student@so:~/.../assignment-mini-shell/tests$ make check
-make[1]: Entering directory '...'
-rm -f *~
-[...]
-01) Testing commands without arguments......................passed  [03/100]
-02) Testing commands with arguments.........................passed  [02/100]
-03) Testing simple redirect operators.......................passed  [05/100]
-04) Testing append redirect operators.......................passed  [05/100]
-05) Testing current directory...............................passed  [05/100]
-06) Testing conditional operators...........................passed  [05/100]
-07) Testing sequential commands.............................passed  [03/100]
-08) Testing environment variables...........................passed  [05/100]
-09) Testing single pipe.....................................passed  [05/100]
-10) Testing multiple pipes..................................passed  [10/100]
-11) Testing variables and redirect..........................passed  [05/100]
-12) Testing overwritten variables...........................passed  [02/100]
-13) Testing all operators...................................passed  [02/100]
-14) Testing parallel operator...............................passed  [10/100]
-15) Testing big file........................................passed  [05/100]
-16) Testing sleep command...................................passed  [07/100]
-17) Testing fscanf function.................................passed  [07/100]
-18) Testing unknown command.................................passed  [04/100]
-
-                                                            Total:   90/100
-```
-
-The actual tests are located in the `inputs/` directory.
-
-```console
-student@os:~/.../assignment-mini-shell/tests/$ ls -F _test/inputs
-test_01.txt  test_03.txt  test_05.txt  test_07.txt  test_09.txt  test_11.txt  test_13.txt  test_15.txt  test_17.txt
-test_02.txt  test_04.txt  test_06.txt  test_08.txt  test_10.txt  test_12.txt  test_14.txt  test_16.txt  test_18.txt
-```
-
-### Running the Linters
-
-To run the linters, use the make lint command in the `tests/` directory:
-
-```console
-student@so:~/.../assignment-mini-shell/tests/$ make lint
-[...]
-cd .. && checkpatch.pl -f checker/*.sh tests/*.sh
-[...]
-cd .. && cpplint --recursive src/ tests/ checker/
-[...]
-cd .. && shellcheck checker/*.sh tests/*.sh
-```
-
-Note that the linters have to be installed on your system: [`checkpatch.pl`](https://.com/torvalds/linux/blob/master/scripts/checkpatch.pl), [`cpplint`](https://github.com/cpplint/cpplint), [`shellcheck`](https://www.shellcheck.net/) with certain configuration options.
-
-### Debugging
-
-To inspect the differences between the output of the mini-shell and the reference binary set `DO_CLEANUP=no` in `tests/_test/run_test.sh`.
-To see the results of the tests, you can check `tests/_test/outputs/` directory.
-
-### Memory leaks
-
-To inspect the unreleased resources (memory leaks, file descriptors) set `USE_VALGRIND=yes` and `DO_CLEANUP=no` in `tests/_test/run_test.sh`.
-You can modify both the path to the Valgrind log file and the command parameters.
-To see the results of the tests, you can check `tests/_test/outputs/` directory.
+The shell is designed for educational purposes and experimentation with process management concepts
